@@ -1,0 +1,24 @@
+spring:
+  config:
+    activate:
+      on-profile: test
+  
+  datasource:
+    url: jdbc:postgresql://localhost:5432/syncpoll_test
+    username: postgres
+    password: postgres
+  
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+  
+  flyway:
+    enabled: false
+  
+  kafka:
+    bootstrap-servers: localhost:9092
+
+logging:
+  level:
+    root: WARN
+    com.syncpoll: DEBUG
