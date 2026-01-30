@@ -4,6 +4,7 @@ import com.syncpoll.model.dto.response.ParticipantResponse;
 import com.syncpoll.model.entity.*;
 import com.syncpoll.repository.AttendanceRepository;
 import com.syncpoll.repository.ParticipantRepository;
+import com.syncpoll.websocket.SessionBroadcaster;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -21,13 +22,16 @@ public class ParticipantService {
     private final ParticipantRepository participantRepository;
     private final AttendanceRepository attendanceRepository;
     private final SessionService sessionService;
+    private final SessionBroadcaster broadcaster;
 
     public ParticipantService(ParticipantRepository participantRepository,
                               AttendanceRepository attendanceRepository,
-                              SessionService sessionService) {
+                              SessionService sessionService,
+                              SessionBroadcaster broadcaster) {
         this.participantRepository = participantRepository;
         this.attendanceRepository = attendanceRepository;
         this.sessionService = sessionService;
+        this.broadcaster = broadcaster;
     }
 
     @Transactional
@@ -58,8 +62,13 @@ public class ParticipantService {
         Attendance attendance = new Attendance(session, saved);
         attendanceRepository.save(attendance);
 
+        ParticipantResponse response = ParticipantResponse.fromEntity(saved);
+        
+        // broadcast to all connected clients
+        broadcaster.participantJoined(session.getId(), response);
+
         log.info("Participant '{}' joined session {} (open mode)", displayName, session.getId());
-        return ParticipantResponse.fromEntity(saved);
+        return response;
     }
 
     @Transactional
@@ -86,8 +95,13 @@ public class ParticipantService {
         Attendance attendance = new Attendance(session, saved);
         attendanceRepository.save(attendance);
 
+        ParticipantResponse response = ParticipantResponse.fromEntity(saved);
+        
+        // broadcast to all connected clients
+        broadcaster.participantJoined(session.getId(), response);
+
         log.info("User {} joined session {} (verified mode)", user.getEmail(), session.getId());
-        return ParticipantResponse.fromEntity(saved);
+        return response;
     }
 
     public List<ParticipantResponse> getParticipantsBySession(Long sessionId) {

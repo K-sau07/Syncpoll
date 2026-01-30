@@ -9,8 +9,10 @@ import com.syncpoll.model.entity.SessionStatus;
 import com.syncpoll.model.entity.User;
 import com.syncpoll.repository.SessionRepository;
 import com.syncpoll.util.JoinCodeGenerator;
+import com.syncpoll.websocket.SessionBroadcaster;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -25,9 +27,11 @@ public class SessionService {
     private static final Logger log = LoggerFactory.getLogger(SessionService.class);
 
     private final SessionRepository sessionRepository;
+    private final SessionBroadcaster broadcaster;
 
-    public SessionService(SessionRepository sessionRepository) {
+    public SessionService(SessionRepository sessionRepository, @Lazy SessionBroadcaster broadcaster) {
         this.sessionRepository = sessionRepository;
+        this.broadcaster = broadcaster;
     }
 
     @Transactional
@@ -93,8 +97,11 @@ public class SessionService {
 
         session.end();
         Session saved = sessionRepository.save(session);
+        
+        // notify all connected clients
+        broadcaster.sessionEnded(sessionId);
+        
         log.info("Session {} ended by host {}", sessionId, host.getEmail());
-
         return SessionResponse.fromEntity(saved);
     }
 

@@ -9,6 +9,7 @@ import com.syncpoll.model.entity.*;
 import com.syncpoll.repository.AnswerRepository;
 import com.syncpoll.repository.PollOptionRepository;
 import com.syncpoll.repository.PollRepository;
+import com.syncpoll.websocket.SessionBroadcaster;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -28,15 +29,18 @@ public class PollService {
     private final PollOptionRepository pollOptionRepository;
     private final AnswerRepository answerRepository;
     private final SessionService sessionService;
+    private final SessionBroadcaster broadcaster;
 
     public PollService(PollRepository pollRepository, 
                        PollOptionRepository pollOptionRepository,
                        AnswerRepository answerRepository,
-                       SessionService sessionService) {
+                       SessionService sessionService,
+                       SessionBroadcaster broadcaster) {
         this.pollRepository = pollRepository;
         this.pollOptionRepository = pollOptionRepository;
         this.answerRepository = answerRepository;
         this.sessionService = sessionService;
+        this.broadcaster = broadcaster;
     }
 
     @Transactional
@@ -100,13 +104,17 @@ public class PollService {
                 .forEach(livePoll -> {
                     livePoll.close();
                     pollRepository.save(livePoll);
+                    broadcaster.pollClosed(session.getId(), PollResponse.fromEntity(livePoll));
                 });
 
         poll.goLive();
         Poll saved = pollRepository.save(poll);
+        
+        PollResponse response = PollResponse.fromEntity(saved);
+        broadcaster.pollStarted(session.getId(), response);
+        
         log.info("Poll {} is now live in session {}", pollId, session.getId());
-
-        return PollResponse.fromEntity(saved);
+        return response;
     }
 
     @Transactional
@@ -124,15 +132,21 @@ public class PollService {
 
         poll.close();
         Poll saved = pollRepository.save(poll);
+        
+        PollResponse response = PollResponse.fromEntity(saved);
+        broadcaster.pollClosed(session.getId(), response);
+        
         log.info("Poll {} closed in session {}", pollId, session.getId());
-
-        return PollResponse.fromEntity(saved);
+        return response;
     }
 
     public PollResultResponse getPollResults(Long pollId) {
         Poll poll = getPollEntity(pollId);
-        
-        List<Object[]> voteCounts = answerRepository.countAnswersByOption(pollId);
+        return buildPollResults(poll);
+    }
+
+    public PollResultResponse buildPollResults(Poll poll) {
+        List<Object[]> voteCounts = answerRepository.countAnswersByOption(poll.getId());
         Map<Long, Long> voteMap = voteCounts.stream()
                 .collect(Collectors.toMap(
                         row -> (Long) row[0],
@@ -154,7 +168,7 @@ public class PollService {
         }
 
         PollResultResponse response = new PollResultResponse();
-        response.setPollId(pollId);
+        response.setPollId(poll.getId());
         response.setQuestion(poll.getQuestion());
         response.setTotalVotes(totalVotes);
         response.setResults(results);

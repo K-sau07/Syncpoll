@@ -1,10 +1,12 @@
 package com.syncpoll.service;
 
 import com.syncpoll.model.dto.request.SubmitAnswerRequest;
+import com.syncpoll.model.dto.response.PollResultResponse;
 import com.syncpoll.model.entity.*;
 import com.syncpoll.repository.AnswerRepository;
 import com.syncpoll.repository.AttendanceRepository;
 import com.syncpoll.repository.PollOptionRepository;
+import com.syncpoll.websocket.SessionBroadcaster;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -22,17 +24,20 @@ public class AnswerService {
     private final AttendanceRepository attendanceRepository;
     private final PollService pollService;
     private final ParticipantService participantService;
+    private final SessionBroadcaster broadcaster;
 
     public AnswerService(AnswerRepository answerRepository,
                          PollOptionRepository pollOptionRepository,
                          AttendanceRepository attendanceRepository,
                          PollService pollService,
-                         ParticipantService participantService) {
+                         ParticipantService participantService,
+                         SessionBroadcaster broadcaster) {
         this.answerRepository = answerRepository;
         this.pollOptionRepository = pollOptionRepository;
         this.attendanceRepository = attendanceRepository;
         this.pollService = pollService;
         this.participantService = participantService;
+        this.broadcaster = broadcaster;
     }
 
     @Transactional
@@ -73,6 +78,11 @@ public class AnswerService {
             a.incrementAnswerCount();
             attendanceRepository.save(a);
         });
+
+        // broadcast updated results to all connected clients
+        Long sessionId = poll.getSession().getId();
+        PollResultResponse results = pollService.buildPollResults(poll);
+        broadcaster.pollResultsUpdated(sessionId, results);
 
         log.debug("Participant {} answered poll {} with option {}", participantId, pollId, request.getOptionId());
     }
