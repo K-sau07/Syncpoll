@@ -1,25 +1,67 @@
-// host view for managing a live session
+// host view for managing a live session with real-time updates
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Copy, Users, Plus, Play, Square, Check } from 'lucide-react'
-import { Button, Card, Input } from '../components/ui'
+import { ArrowLeft, Copy, Users, Plus, Play, Square, Check, QrCode } from 'lucide-react'
+import { Button, Card, Input, Modal, QRCode } from '../components/ui'
+import ParticipantsList from '../components/ParticipantsList'
 import { sessionService, pollService } from '../services/session'
+import { useWebSocket } from '../hooks'
+import { useToast } from '../components/Toast'
 
 function HostSessionPage() {
   const { sessionId } = useParams()
   const navigate = useNavigate()
+  const toast = useToast()
   
   const [session, setSession] = useState(null)
   const [polls, setPolls] = useState([])
+  const [participants, setParticipants] = useState([])
   const [loading, setLoading] = useState(true)
   const [showCreatePoll, setShowCreatePoll] = useState(false)
+  const [showQRCode, setShowQRCode] = useState(false)
   const [codeCopied, setCodeCopied] = useState(false)
   
   // poll creation form
   const [question, setQuestion] = useState('')
   const [options, setOptions] = useState(['', ''])
   const [creating, setCreating] = useState(false)
+  
+  // handle websocket messages
+  const handleWebSocketMessage = useCallback((data) => {
+    switch (data.type) {
+      case 'PARTICIPANT_JOINED':
+        setParticipants(prev => [...prev, data.participant])
+        toast.success(`${data.participant.displayName} joined`)
+        break
+        
+      case 'PARTICIPANT_LEFT':
+        setParticipants(prev => prev.filter(p => p.id !== data.participantId))
+        break
+        
+      case 'ANSWER_SUBMITTED':
+        // update poll results in real-time
+        setPolls(prev => prev.map(poll => {
+          if (poll.id === data.pollId) {
+            return {
+              ...poll,
+              options: poll.options.map(opt => 
+                opt.id === data.optionId 
+                  ? { ...opt, votes: (opt.votes || 0) + 1 }
+                  : opt
+              )
+            }
+          }
+          return poll
+        }))
+        break
+        
+      default:
+        break
+    }
+  }, [toast])
+  
+  const { connected } = useWebSocket(sessionId, handleWebSocketMessage)
   
   useEffect(() => {
     fetchSessionData()
@@ -33,8 +75,10 @@ function HostSessionPage() {
       ])
       setSession(sessionRes.data)
       setPolls(pollsRes.data)
+      setParticipants(sessionRes.data.participants || [])
     } catch (err) {
       console.error('Failed to fetch session:', err)
+      toast.error('Failed to load session')
     } finally {
       setLoading(false)
     }
@@ -43,7 +87,14 @@ function HostSessionPage() {
   const copyJoinCode = async () => {
     await navigator.clipboard.writeText(session.joinCode)
     setCodeCopied(true)
+    toast.success('Join code copied!')
     setTimeout(() => setCodeCopied(false), 2000)
+  }
+  
+  const copyJoinLink = async () => {
+    const link = `${window.location.origin}/?code=${session.joinCode}`
+    await navigator.clipboard.writeText(link)
+    toast.success('Join link copied!')
   }
   
   const handleCreatePoll = async (e) => {
@@ -57,13 +108,13 @@ function HostSessionPage() {
         options: options.filter(o => o.trim())
       })
       
-      // reset form and refresh
+      toast.success('Poll created!')
       setQuestion('')
       setOptions(['', ''])
       setShowCreatePoll(false)
       fetchSessionData()
     } catch (err) {
-      console.error('Failed to create poll:', err)
+      toast.error('Failed to create poll')
     } finally {
       setCreating(false)
     }
@@ -90,18 +141,20 @@ function HostSessionPage() {
   const startPoll = async (pollId) => {
     try {
       await pollService.start(sessionId, pollId)
+      toast.success('Poll started!')
       fetchSessionData()
     } catch (err) {
-      console.error('Failed to start poll:', err)
+      toast.error('Failed to start poll')
     }
   }
   
   const stopPoll = async (pollId) => {
     try {
       await pollService.stop(sessionId, pollId)
+      toast.info('Poll stopped')
       fetchSessionData()
     } catch (err) {
-      console.error('Failed to stop poll:', err)
+      toast.error('Failed to stop poll')
     }
   }
   
@@ -121,6 +174,8 @@ function HostSessionPage() {
     )
   }
   
+  const joinUrl = `${window.location.origin}/?code=${session.joinCode}`
+  
   return (
     <div className="min-h-screen bg-background">
       {/* header */}
@@ -136,7 +191,7 @@ function HostSessionPage() {
               </button>
               <div>
                 <h1 className="font-semibold text-text-primary">{session.title}</h1>
-                <div className="flex items-center gap-2 mt-1">
+                <div className="flex items-center gap-3 mt-1">
                   <span className={`
                     px-2 py-0.5 rounded text-xs font-medium
                     ${session.status === 'ACTIVE' 
@@ -147,24 +202,30 @@ function HostSessionPage() {
                   </span>
                   <span className="text-text-secondary text-sm flex items-center gap-1">
                     <Users className="w-4 h-4" />
-                    {session.participantCount || 0} participants
+                    {participants.length} joined
+                  </span>
+                  <span className={`
+                    flex items-center gap-1 text-xs
+                    ${connected ? 'text-success' : 'text-warning'}
+                  `}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-success' : 'bg-warning'}`} />
+                    {connected ? 'Live' : 'Connecting...'}
                   </span>
                 </div>
               </div>
             </div>
             
-            {/* join code */}
-            <div className="flex items-center gap-2">
+            {/* join code section */}
+            <div className="flex items-center gap-3">
               <div className="text-right">
                 <p className="text-xs text-text-secondary">Join Code</p>
                 <p className="font-mono font-bold text-lg text-primary">{session.joinCode}</p>
               </div>
-              <Button 
-                variant="secondary" 
-                size="sm"
-                onClick={copyJoinCode}
-              >
+              <Button variant="secondary" size="sm" onClick={copyJoinCode}>
                 {codeCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setShowQRCode(true)}>
+                <QrCode className="w-4 h-4" />
               </Button>
             </div>
           </div>
@@ -173,108 +234,141 @@ function HostSessionPage() {
       
       {/* main content */}
       <main className="max-w-6xl mx-auto px-4 py-6">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-semibold text-text-primary">Polls</h2>
-          <Button onClick={() => setShowCreatePoll(true)}>
-            <Plus className="w-4 h-4 mr-2" />
-            Create Poll
-          </Button>
-        </div>
-        
-        {polls.length === 0 ? (
-          <Card className="text-center py-12">
-            <p className="text-text-secondary mb-4">No polls yet. Create your first poll to engage your audience.</p>
-            <Button onClick={() => setShowCreatePoll(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              Create Poll
-            </Button>
-          </Card>
-        ) : (
-          <div className="flex flex-col gap-4">
-            {polls.map((poll) => (
-              <PollCard 
-                key={poll.id} 
-                poll={poll}
-                onStart={() => startPoll(poll.id)}
-                onStop={() => stopPoll(poll.id)}
-              />
-            ))}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* polls column */}
+          <div className="lg:col-span-2">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-text-primary">Polls</h2>
+              <Button onClick={() => setShowCreatePoll(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Create Poll
+              </Button>
+            </div>
+            
+            {polls.length === 0 ? (
+              <Card className="text-center py-12">
+                <p className="text-text-secondary mb-4">
+                  No polls yet. Create your first poll to engage your audience.
+                </p>
+                <Button onClick={() => setShowCreatePoll(true)}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create Poll
+                </Button>
+              </Card>
+            ) : (
+              <div className="flex flex-col gap-4">
+                {polls.map((poll) => (
+                  <PollCard 
+                    key={poll.id} 
+                    poll={poll}
+                    onStart={() => startPoll(poll.id)}
+                    onStop={() => stopPoll(poll.id)}
+                  />
+                ))}
+              </div>
+            )}
           </div>
-        )}
+          
+          {/* participants sidebar */}
+          <div>
+            <ParticipantsList participants={participants} />
+          </div>
+        </div>
       </main>
       
       {/* create poll modal */}
-      {showCreatePoll && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold text-text-primary mb-4">Create Poll</h3>
-            
-            <form onSubmit={handleCreatePoll} className="flex flex-col gap-4">
-              <Input
-                label="Question"
-                placeholder="What do you want to ask?"
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                required
-              />
-              
-              <div>
-                <label className="text-sm font-medium text-text-primary mb-2 block">
-                  Options
-                </label>
-                <div className="flex flex-col gap-2">
-                  {options.map((option, index) => (
-                    <div key={index} className="flex gap-2">
-                      <Input
-                        placeholder={`Option ${index + 1}`}
-                        value={option}
-                        onChange={(e) => updateOption(index, e.target.value)}
-                        className="flex-1"
-                      />
-                      {options.length > 2 && (
-                        <button
-                          type="button"
-                          onClick={() => removeOption(index)}
-                          className="px-3 text-text-secondary hover:text-error"
-                        >
-                          ×
-                        </button>
-                      )}
-                    </div>
-                  ))}
+      <Modal 
+        isOpen={showCreatePoll} 
+        onClose={() => setShowCreatePoll(false)}
+        title="Create Poll"
+        size="lg"
+      >
+        <form onSubmit={handleCreatePoll} className="flex flex-col gap-4">
+          <Input
+            label="Question"
+            placeholder="What do you want to ask?"
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            required
+          />
+          
+          <div>
+            <label className="text-sm font-medium text-text-primary mb-2 block">
+              Options
+            </label>
+            <div className="flex flex-col gap-2">
+              {options.map((option, index) => (
+                <div key={index} className="flex gap-2">
+                  <Input
+                    placeholder={`Option ${index + 1}`}
+                    value={option}
+                    onChange={(e) => updateOption(index, e.target.value)}
+                    className="flex-1"
+                  />
+                  {options.length > 2 && (
+                    <button
+                      type="button"
+                      onClick={() => removeOption(index)}
+                      className="px-3 text-text-secondary hover:text-error"
+                    >
+                      ×
+                    </button>
+                  )}
                 </div>
-                {options.length < 6 && (
-                  <button
-                    type="button"
-                    onClick={addOption}
-                    className="mt-2 text-sm text-primary hover:underline"
-                  >
-                    + Add option
-                  </button>
-                )}
-              </div>
-              
-              <div className="flex gap-3 mt-2">
-                <Button 
-                  type="button" 
-                  variant="secondary" 
-                  onClick={() => setShowCreatePoll(false)}
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-                <Button 
-                  type="submit" 
-                  disabled={creating || !question.trim() || options.filter(o => o.trim()).length < 2}
-                  className="flex-1"
-                >
-                  {creating ? 'Creating...' : 'Create Poll'}
-                </Button>
-              </div>
-            </form>
-          </Card>
+              ))}
+            </div>
+            {options.length < 6 && (
+              <button
+                type="button"
+                onClick={addOption}
+                className="mt-2 text-sm text-primary hover:underline"
+              >
+                + Add option
+              </button>
+            )}
+          </div>
+          
+          <div className="flex gap-3 mt-2">
+            <Button 
+              type="button" 
+              variant="secondary" 
+              onClick={() => setShowCreatePoll(false)}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button 
+              type="submit" 
+              disabled={creating || !question.trim() || options.filter(o => o.trim()).length < 2}
+              className="flex-1"
+            >
+              {creating ? 'Creating...' : 'Create Poll'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+      
+      {/* QR code modal */}
+      <Modal
+        isOpen={showQRCode}
+        onClose={() => setShowQRCode(false)}
+        title="Scan to Join"
+        size="sm"
+      >
+        <div className="flex flex-col items-center gap-4">
+          <QRCode value={joinUrl} size={200} />
+          <p className="text-text-secondary text-sm text-center">
+            Scan this code or share the link below
+          </p>
+          <div className="w-full p-3 bg-background rounded-lg text-center">
+            <code className="text-sm text-primary break-all">{joinUrl}</code>
+          </div>
+          <Button onClick={copyJoinLink} fullWidth variant="secondary">
+            <Copy className="w-4 h-4 mr-2" />
+            Copy Link
+          </Button>
         </div>
-      )}
+      </Modal>
     </div>
   )
 }
@@ -317,18 +411,20 @@ function PollCard({ poll, onStart, onStop }) {
       {/* results */}
       <div className="flex flex-col gap-2">
         {poll.options?.map((option) => {
-          const percentage = totalVotes > 0 ? Math.round((option.votes || 0) / totalVotes * 100) : 0
+          const percentage = totalVotes > 0 
+            ? Math.round((option.votes || 0) / totalVotes * 100) 
+            : 0
           
           return (
             <div key={option.id} className="relative">
-              <div className="flex justify-between items-center p-3 rounded-lg border border-border relative z-10">
+              <div className="flex justify-between items-center p-3 rounded-lg border border-border relative z-10 bg-white/50">
                 <span className="text-text-primary">{option.text}</span>
                 <span className="text-text-secondary text-sm">
                   {option.votes || 0} ({percentage}%)
                 </span>
               </div>
               <div 
-                className="absolute inset-0 bg-primary/10 rounded-lg"
+                className="absolute inset-0 bg-primary/10 rounded-lg transition-all duration-300"
                 style={{ width: `${percentage}%` }}
               />
             </div>
