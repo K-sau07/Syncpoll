@@ -11,6 +11,8 @@ import com.syncpoll.service.PollService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -35,9 +37,9 @@ public class PollController {
     public ResponseEntity<PollResponse> createPoll(
             @PathVariable Long sessionId,
             @Valid @RequestBody CreatePollRequest request,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @AuthenticationPrincipal OAuth2User principal) {
         
-        User host = getOrCreateTestUser(userId);
+        User host = getUserFromPrincipal(principal);
         PollResponse poll = pollService.createPoll(sessionId, request, host);
         return ResponseEntity.status(HttpStatus.CREATED).body(poll);
     }
@@ -58,9 +60,9 @@ public class PollController {
     public ResponseEntity<PollResponse> startPoll(
             @PathVariable Long sessionId,
             @PathVariable Long pollId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @AuthenticationPrincipal OAuth2User principal) {
         
-        User host = getOrCreateTestUser(userId);
+        User host = getUserFromPrincipal(principal);
         return ResponseEntity.ok(pollService.startPoll(pollId, host));
     }
 
@@ -68,9 +70,9 @@ public class PollController {
     public ResponseEntity<PollResponse> closePoll(
             @PathVariable Long sessionId,
             @PathVariable Long pollId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @AuthenticationPrincipal OAuth2User principal) {
         
-        User host = getOrCreateTestUser(userId);
+        User host = getUserFromPrincipal(principal);
         return ResponseEntity.ok(pollService.closePoll(pollId, host));
     }
 
@@ -96,26 +98,20 @@ public class PollController {
     public ResponseEntity<Void> deletePoll(
             @PathVariable Long sessionId,
             @PathVariable Long pollId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @AuthenticationPrincipal OAuth2User principal) {
         
-        User host = getOrCreateTestUser(userId);
+        User host = getUserFromPrincipal(principal);
         pollService.deletePoll(pollId, host);
         return ResponseEntity.noContent().build();
     }
 
-    private User getOrCreateTestUser(Long userId) {
-        if (userId != null) {
-            return authService.findById(userId).orElseGet(this::createTestUser);
+    private User getUserFromPrincipal(OAuth2User principal) {
+        if (principal == null) {
+            throw new IllegalStateException("User not authenticated");
         }
-        return createTestUser();
-    }
-
-    private User createTestUser() {
-        return authService.findOrCreateUser(
-                "test@syncpoll.dev",
-                "Test User",
-                "test-google-id-123",
-                null
-        );
+        
+        String email = principal.getAttribute("email");
+        return authService.findByEmail(email)
+                .orElseThrow(() -> new IllegalStateException("User not found"));
     }
 }

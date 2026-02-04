@@ -12,6 +12,8 @@ import com.syncpoll.service.SessionService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -38,10 +40,9 @@ public class SessionController {
     @PostMapping
     public ResponseEntity<SessionResponse> createSession(
             @Valid @RequestBody CreateSessionRequest request,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @AuthenticationPrincipal OAuth2User principal) {
         
-        // temporary: get or create a test user until OAuth is set up
-        User host = getOrCreateTestUser(userId);
+        User host = getUserFromPrincipal(principal);
         SessionResponse session = sessionService.createSession(request, host);
         return ResponseEntity.status(HttpStatus.CREATED).body(session);
     }
@@ -58,27 +59,27 @@ public class SessionController {
 
     @GetMapping
     public ResponseEntity<List<SessionResponse>> getMySessions(
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @AuthenticationPrincipal OAuth2User principal) {
         
-        User host = getOrCreateTestUser(userId);
+        User host = getUserFromPrincipal(principal);
         return ResponseEntity.ok(sessionService.getSessionsByHost(host));
     }
 
     @PostMapping("/{sessionId}/end")
     public ResponseEntity<SessionResponse> endSession(
             @PathVariable Long sessionId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @AuthenticationPrincipal OAuth2User principal) {
         
-        User host = getOrCreateTestUser(userId);
+        User host = getUserFromPrincipal(principal);
         return ResponseEntity.ok(sessionService.endSession(sessionId, host));
     }
 
     @DeleteMapping("/{sessionId}")
     public ResponseEntity<Void> deleteSession(
             @PathVariable Long sessionId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @AuthenticationPrincipal OAuth2User principal) {
         
-        User host = getOrCreateTestUser(userId);
+        User host = getUserFromPrincipal(principal);
         sessionService.deleteSession(sessionId, host);
         return ResponseEntity.noContent().build();
     }
@@ -93,20 +94,13 @@ public class SessionController {
         return ResponseEntity.ok(attendanceService.getAttendanceBySession(sessionId));
     }
 
-    // temporary helper until OAuth is set up
-    private User getOrCreateTestUser(Long userId) {
-        if (userId != null) {
-            return authService.findById(userId).orElseGet(this::createTestUser);
+    private User getUserFromPrincipal(OAuth2User principal) {
+        if (principal == null) {
+            throw new IllegalStateException("User not authenticated");
         }
-        return createTestUser();
-    }
-
-    private User createTestUser() {
-        return authService.findOrCreateUser(
-                "test@syncpoll.dev",
-                "Test User",
-                "test-google-id-123",
-                null
-        );
+        
+        String email = principal.getAttribute("email");
+        return authService.findByEmail(email)
+                .orElseThrow(() -> new IllegalStateException("User not found"));
     }
 }
