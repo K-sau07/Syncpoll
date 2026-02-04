@@ -1,16 +1,28 @@
 // landing page where participants enter join code
 
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, Input, Card } from '../components/ui'
 import { sessionService } from '../services/session'
+import { useToast } from '../components/Toast'
 
 function JoinPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const toast = useToast()
+  
   const [joinCode, setJoinCode] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  
+  // auto-fill code from URL parameter
+  useEffect(() => {
+    const codeFromUrl = searchParams.get('code')
+    if (codeFromUrl) {
+      setJoinCode(codeFromUrl.toUpperCase())
+    }
+  }, [searchParams])
   
   const handleJoin = async (e) => {
     e.preventDefault()
@@ -36,6 +48,7 @@ function JoinPage() {
       localStorage.setItem('participantId', participantId)
       localStorage.setItem('sessionId', sessionId)
       
+      toast.success('Joined session!')
       navigate(`/session/${sessionId}`)
     } catch (err) {
       if (err.response?.status === 404) {
@@ -45,6 +58,7 @@ function JoinPage() {
       } else {
         setError('Something went wrong. Please try again.')
       }
+      toast.error('Failed to join session')
     } finally {
       setLoading(false)
     }
@@ -67,7 +81,6 @@ function JoinPage() {
               placeholder="Enter 6-digit code"
               value={joinCode}
               onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-              error={error && !joinCode ? 'Required' : ''}
               disabled={loading}
             />
             
@@ -76,7 +89,6 @@ function JoinPage() {
               placeholder="How should we call you?"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
-              error={error && !displayName ? 'Required' : ''}
               disabled={loading}
             />
             
