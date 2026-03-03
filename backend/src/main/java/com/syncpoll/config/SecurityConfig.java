@@ -38,6 +38,9 @@ public class SecurityConfig {
                 // participant endpoints - need participant header, not auth
                 .requestMatchers(HttpMethod.POST, "/api/sessions/*/polls/*/answer").permitAll()
                 
+                // temporarily open for testing - lock down after oauth is done
+                .requestMatchers(HttpMethod.POST, "/api/sessions").permitAll()
+                
                 // host endpoints - require authentication
                 .requestMatchers("/api/sessions/**").authenticated()
                 .requestMatchers("/api/users/**").authenticated()
