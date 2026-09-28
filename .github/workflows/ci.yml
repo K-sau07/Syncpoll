@@ -68,6 +68,26 @@ jobs:
           cd frontend
           npm run build
       
+      - name: Diagnose — node and vitest
+        continue-on-error: true
+        run: |
+          cd frontend
+          node -v
+          npx vitest --version
+
+      - name: Diagnose — test files present
+        continue-on-error: true
+        run: |
+          cd frontend
+          ls -la src/test/
+          cat vite.config.js
+
+      - name: Diagnose — jsdom resolves
+        continue-on-error: true
+        run: |
+          cd frontend
+          node -e "require('jsdom'); console.log('jsdom ok')"
+
       - name: Run tests
         run: |
           cd frontend
