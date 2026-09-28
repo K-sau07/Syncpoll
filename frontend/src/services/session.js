@@ -16,7 +16,13 @@ export const sessionService = {
   join: (joinCode, displayName) => api.post('/join', { joinCode, displayName }),
   
   // end a session
-  end: (id) => api.post(`/sessions/${id}/end`)
+  end: (id) => api.post(`/sessions/${id}/end`),
+
+  // attendance report — who joined, when, and how many answers they gave
+  attendance: (id) => api.get(`/sessions/${id}/attendance`),
+
+  // raw participant list
+  participants: (id) => api.get(`/sessions/${id}/participants`)
 }
 
 export const pollService = {
@@ -29,8 +35,8 @@ export const pollService = {
   // start a poll
   start: (sessionId, pollId) => api.post(`/sessions/${sessionId}/polls/${pollId}/start`),
   
-  // stop a poll
-  stop: (sessionId, pollId) => api.post(`/sessions/${sessionId}/polls/${pollId}/stop`),
+  // close a poll (backend exposes /close, not /stop)
+  stop: (sessionId, pollId) => api.post(`/sessions/${sessionId}/polls/${pollId}/close`),
   
   // submit answer
   answer: (sessionId, pollId, optionId, participantId) => 

@@ -272,6 +272,14 @@ function HostSessionPage() {
           {/* participants sidebar */}
           <div>
             <ParticipantsList participants={participants} />
+
+            <button
+              onClick={() => navigate(`/host/session/${sessionId}/attendance`)}
+              className="mt-4 w-full text-sm text-text-secondary hover:text-text-primary
+                         border border-border rounded-lg py-2 transition-colors"
+            >
+              View attendance report →
+            </button>
           </div>
         </div>
       </main>

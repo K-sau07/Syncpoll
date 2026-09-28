@@ -6,6 +6,7 @@ import JoinPage from './pages/JoinPage'
 import ParticipantSessionPage from './pages/ParticipantSessionPage'
 import HostDashboard from './pages/HostDashboard'
 import HostSessionPage from './pages/HostSessionPage'
+import AttendancePage from './pages/AttendancePage'
 import NotFoundPage from './pages/NotFoundPage'
 
 function App() {
@@ -16,6 +17,7 @@ function App() {
           <Route path="/" element={<JoinPage />} />
           <Route path="/session/:sessionId" element={<ParticipantSessionPage />} />
           <Route path="/host" element={<HostDashboard />} />
+          <Route path="/host/session/:sessionId/attendance" element={<AttendancePage />} />
           <Route path="/host/session/:sessionId" element={<HostSessionPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
